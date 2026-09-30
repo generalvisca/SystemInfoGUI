@@ -1,0 +1,17 @@
+# 统一换行符处理，避免跨平台协作时出现整文件 diff
+* text=auto
+
+# 源码与项目文件在 Windows 上以 CRLF 检出
+*.cs      text eol=crlf
+*.csproj  text eol=crlf
+*.sln     text eol=crlf
+*.manifest text eol=crlf
+*.md      text eol=crlf
+*.json    text eol=crlf
+
+# 二进制文件不做换行转换
+*.png binary
+*.jpg binary
+*.ico binary
+*.exe binary
+*.dll binary

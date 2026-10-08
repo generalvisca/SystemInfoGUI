@@ -40,12 +40,15 @@ public class SystemInfoForm : Form
     private DataGridView dataGridView = null!;
 
     /// <summary>
-    /// 采集期间的状态提示，覆盖在表格区域上方居中位置。
+    /// 采集期间的状态提示：一条来回滚动的进度条加一行说明文字，整体覆盖在表格区域正中。
     /// </summary>
     /// <remarks>
-    /// 忙碌状态放在窗体内容区而非标题栏：标题栏空间窄且会被系统截断，
+    /// 忙碌状态放在窗体内容区而非标题栏：标题栏空间窄且容易被系统截断，
     /// 采集耗时数秒，进度反馈应当在用户视线集中的表格区域给出。
+    /// 用容器承载二者而非散放两个控件，隐藏时只需切换一处可见性，也不会各自算错居中位置。
     /// </remarks>
+    private Panel pnlStatus = null!;
+    private ProgressBar progressStatus = null!;
     private Label lblStatus = null!;
 
     /// <summary>
@@ -143,25 +146,59 @@ public class SystemInfoForm : Form
         dataGridView.CellPainting += DataGridView_CellPainting;
         dataGridView.CellFormatting += DataGridView_CellFormatting;
 
+        const int statusPanelWidth = 260;
+        const int barWidth = 200;
+
+        // Marquee 需要 comctl32 v6 才会滚动，Program.Main 已调用 EnableVisualStyles，此处可直接用。
+        // 高度取 6 而非控件默认 23：细条更像现代加载指示，粗块反而抢视线。
+        progressStatus = new ProgressBar
+        {
+            Style = ProgressBarStyle.Marquee,
+            MarqueeAnimationSpeed = 0,
+            Size = new System.Drawing.Size(barWidth, 6),
+            Location = new System.Drawing.Point((statusPanelWidth - barWidth) / 2, 6)
+        };
+
         lblStatus = new Label
         {
-            // 表格区宽度 960，标签取 300 宽并居中，文字靠 TextAlign 居中而非靠 AutoSize 定位，
-            // 这样显示/隐藏时位置不跳动。
-            Text = "正在采集...",
-            Size = new System.Drawing.Size(300, 30),
-            Location = new System.Drawing.Point(10 + (960 - 300) / 2, 70),
+            Text = "正在采集系统信息...",
+            Size = new System.Drawing.Size(statusPanelWidth, 26),
+            Location = new System.Drawing.Point(0, 18),
             TextAlign = ContentAlignment.MiddleCenter,
-            Font = new System.Drawing.Font("Segoe UI", 11, FontStyle.Bold),
-            ForeColor = System.Drawing.Color.DarkBlue,
-            BackColor = System.Drawing.Color.Transparent,
+            Font = new System.Drawing.Font("Segoe UI", 10),
+            // 灰色而非深色/彩色：加载提示是过程信息，不该和数据行争夺注意力。
+            ForeColor = System.Drawing.Color.DimGray
+        };
+
+        pnlStatus = new Panel
+        {
+            Size = new System.Drawing.Size(statusPanelWidth, 48),
+            // 白底遮住身下的网格线，避免提示文字压在格线上显得杂乱。
+            BackColor = System.Drawing.Color.White,
             Visible = false
         };
+        pnlStatus.Controls.Add(progressStatus);
+        pnlStatus.Controls.Add(lblStatus);
 
         this.Controls.Add(btnRefresh);
         this.Controls.Add(dataGridView);
         // 后加入的控件默认在下层，必须提到最前，否则会被表格盖住看不见。
-        this.Controls.Add(lblStatus);
-        lblStatus.BringToFront();
+        this.Controls.Add(pnlStatus);
+        pnlStatus.BringToFront();
+
+        // 表格随窗口缩放，提示位置要跟着重算，否则放大窗口后提示会偏离视觉中心。
+        dataGridView.Resize += (_, _) => CenterStatusPanel();
+        CenterStatusPanel();
+    }
+
+    /// <summary>
+    /// 把状态提示摆到表格区域的正中（水平、垂直双向居中）。
+    /// </summary>
+    private void CenterStatusPanel()
+    {
+        pnlStatus.Location = new System.Drawing.Point(
+            dataGridView.Left + (dataGridView.Width - pnlStatus.Width) / 2,
+            dataGridView.Top + (dataGridView.Height - pnlStatus.Height) / 2);
     }
 
     private async void BtnRefresh_Click(object? sender, EventArgs e)
@@ -174,8 +211,10 @@ public class SystemInfoForm : Form
         btnRefresh.Enabled = false;
         btnRefresh.Text = "采集中...";
         ClearRows();
-        // 忙碌提示走内容区标签，标题栏保持为固定工具名（不再出现"正在采集"）。
-        lblStatus.Visible = true;
+        // 忙碌提示走内容区指示条，标题栏保持为固定工具名（不再出现"正在采集"）。
+        pnlStatus.Visible = true;
+        // 隐藏时把动画速度归零：Marquee 不可见时仍在跑会白占 CPU。
+        progressStatus.MarqueeAnimationSpeed = 25;
 
         try
         {
@@ -197,7 +236,8 @@ public class SystemInfoForm : Form
             btnRefresh.Enabled = true;
             btnRefresh.Text = "刷新信息";
             // 异常路径也要收起提示，否则失败后"正在采集"会一直挂着。
-            lblStatus.Visible = false;
+            pnlStatus.Visible = false;
+            progressStatus.MarqueeAnimationSpeed = 0;
         }
     }
 

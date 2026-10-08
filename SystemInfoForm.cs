@@ -156,9 +156,10 @@ public class SystemInfoForm : Form
             // 必须移出 UI 线程，否则界面会冻结数秒。
             DataTable table = await Task.Run(() => SystemInfoCollector.GetInfoTable());
 
-            int infoCount = RenderGroups(table);
+            RenderGroups(table);
             BuildMergeMap();
-            this.Text = $"{TitleText} - 共 {infoCount} 项";
+            // 标题固定为工具名，不再追加“共 N 项”——项数随采集结果变动，信息量低且显冗余。
+            this.Text = TitleText;
         }
         catch (Exception ex)
         {

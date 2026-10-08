@@ -40,6 +40,15 @@ public class SystemInfoForm : Form
     private DataGridView dataGridView = null!;
 
     /// <summary>
+    /// 采集期间的状态提示，覆盖在表格区域上方居中位置。
+    /// </summary>
+    /// <remarks>
+    /// 忙碌状态放在窗体内容区而非标题栏：标题栏空间窄且会被系统截断，
+    /// 采集耗时数秒，进度反馈应当在用户视线集中的表格区域给出。
+    /// </remarks>
+    private Label lblStatus = null!;
+
+    /// <summary>
     /// 与表格行一一对应的元信息：所属分组、是否为分组标题行。
     /// </summary>
     /// <remarks>
@@ -134,8 +143,25 @@ public class SystemInfoForm : Form
         dataGridView.CellPainting += DataGridView_CellPainting;
         dataGridView.CellFormatting += DataGridView_CellFormatting;
 
+        lblStatus = new Label
+        {
+            // 表格区宽度 960，标签取 300 宽并居中，文字靠 TextAlign 居中而非靠 AutoSize 定位，
+            // 这样显示/隐藏时位置不跳动。
+            Text = "正在采集...",
+            Size = new System.Drawing.Size(300, 30),
+            Location = new System.Drawing.Point(10 + (960 - 300) / 2, 70),
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = new System.Drawing.Font("Segoe UI", 11, FontStyle.Bold),
+            ForeColor = System.Drawing.Color.DarkBlue,
+            BackColor = System.Drawing.Color.Transparent,
+            Visible = false
+        };
+
         this.Controls.Add(btnRefresh);
         this.Controls.Add(dataGridView);
+        // 后加入的控件默认在下层，必须提到最前，否则会被表格盖住看不见。
+        this.Controls.Add(lblStatus);
+        lblStatus.BringToFront();
     }
 
     private async void BtnRefresh_Click(object? sender, EventArgs e)
@@ -148,7 +174,8 @@ public class SystemInfoForm : Form
         btnRefresh.Enabled = false;
         btnRefresh.Text = "采集中...";
         ClearRows();
-        this.Text = $"{TitleText} - 正在采集";
+        // 忙碌提示走内容区标签，标题栏保持为固定工具名（不再出现"正在采集"）。
+        lblStatus.Visible = true;
 
         try
         {
@@ -169,6 +196,8 @@ public class SystemInfoForm : Form
         {
             btnRefresh.Enabled = true;
             btnRefresh.Text = "刷新信息";
+            // 异常路径也要收起提示，否则失败后"正在采集"会一直挂着。
+            lblStatus.Visible = false;
         }
     }
 

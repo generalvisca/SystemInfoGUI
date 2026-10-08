@@ -13,6 +13,12 @@
     <DebugSymbols>false</DebugSymbols>
     <SupportedOSPlatformVersion>7.0</SupportedOSPlatformVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <!-- 发布产物直接输出到项目根目录的 publish\，取代默认的多层路径
+         bin\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\publish\。
+         注意：本工程为 PublishSingleFile，发布结果仅一个 SystemInfoGUI.exe，
+         放在根目录便于分发；该目录已被 .gitignore 的 publish/ 与 *.exe 规则忽略。 -->
+    <PublishDir>publish\</PublishDir>
   </PropertyGroup>
 
   <ItemGroup>

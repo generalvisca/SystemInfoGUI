@@ -190,14 +190,26 @@ public static class SystemInfoCollector
     }
 
     /// <summary>
-    /// 向结果表追加一行，并显式声明该行所属分组。
+    /// 向结果表追加一行，并显式声明该行所属分组。属性写在首列、值写在末列，
+    /// 中间两列留空（展示侧会把它们合并成整块，形成"属性 | 值"的宽值区）。
     /// </summary>
     /// <remarks>
     /// 分组由调用方以 <see cref="InfoGroup"/> 显式传入，展示侧据此归组。
     /// 这样属性名不再承担分类职责，重命名属性不会导致某行意外掉出分组。
     /// </remarks>
     private static void AddRow(DataTable table, InfoGroup group, string prop, string value)
-        => table.Rows.Add(prop, value, group);
+        => table.Rows.Add(prop, string.Empty, string.Empty, value, group);
+
+    /// <summary>
+    /// 追加一行有层级结构的信息：首列是大类、次列是子类、第三列是项目名、末列是值。
+    /// </summary>
+    /// <remarks>
+    /// 用于「网卡 → IPv4/IPv6 → IP地址/网关」这类三层数据。
+    /// 留空的列由展示侧向上/向左合并，从而在界面上呈现为跨行、跨块的分组外观。
+    /// 传 <see cref="string.Empty"/> 即表示"承接上一行同列的值"。
+    /// </remarks>
+    private static void AddRow(DataTable table, InfoGroup group, string prop, string sub, string item, string value)
+        => table.Rows.Add(prop, sub, item, value, group);
 
     private static string? GetActivePowerSchemeGuid()
     {
@@ -245,13 +257,18 @@ public static class SystemInfoCollector
     /// 采集系统信息。
     /// </summary>
     /// <returns>
-    /// 三列 <see cref="DataTable"/>：<c>属性</c>(string)、<c>值</c>(string)、<c>分组</c>(<see cref="InfoGroup"/>)。
-    /// 前两列的索引与语义保持历史兼容；第三列是分组契约的显式载体，由展示侧读取，不参与界面呈现。
+    /// 五列 <see cref="DataTable"/>：<c>属性</c>、<c>子项</c>、<c>项目</c>、<c>值</c>（均为 string）
+    /// 以及 <c>分组</c>(<see cref="InfoGroup"/>)。
+    /// 前三列承载层级：大类 → 子类 → 项目；<c>值</c> 恒在最右。
+    /// 无层级的普通行只填 <c>属性</c> 与 <c>值</c>，中间两列留空由展示侧合并。
+    /// <c>分组</c> 是分组契约的显式载体，由展示侧读取，不参与界面呈现。
     /// </returns>
     public static DataTable GetInfoTable()
     {
         var table = new DataTable();
         table.Columns.Add("属性", typeof(string));
+        table.Columns.Add("子项", typeof(string));
+        table.Columns.Add("项目", typeof(string));
         table.Columns.Add("值", typeof(string));
         table.Columns.Add("分组", typeof(InfoGroup));
 
@@ -272,22 +289,45 @@ public static class SystemInfoCollector
         AddRow(table, InfoGroup.Other, "本机用户名", Environment.UserName ?? "未知");
 
         // 3. 电源超时
+        //
+        // 分组维度是「供电方式」而不是「设置项」：Windows 的每个超时项都同时存在 DC/AC 两套值，
+        // 而用户关心的是“拔掉电源后多久熄屏/睡眠”与“插着电源时多久熄屏/睡眠”，
+        // 因此按 DC/AC 归组，每组内部按 屏幕关闭超时 → 睡眠超时 排列。
+        // 语义必须记牢：DCSettingIndex = 使用电池，ACSettingIndex = 连接电源。
+        //
+        // 每组首行的“属性”列写供电方式名，次行写空字符串，用留空模拟合并单元格的视觉分组效果，
+        // 让两行在界面上读起来属于同一个供电场景。
         string? activeSchemeGuid = GetActivePowerSchemeGuid();
         if (!string.IsNullOrEmpty(activeSchemeGuid))
         {
+            // 先把四个值读入局部变量，再统一 AddRow：注册表 key 的 using 作用域结束后即释放，
+            // 避免边读边插行导致行序与资源生命周期耦合。
+            string screenTimeoutDc;
+            string screenTimeoutAc;
+            string sleepTimeoutDc;
+            string sleepTimeoutAc;
+
             string screenRegPath = $@"SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\{activeSchemeGuid}\7516b95f-f776-4464-8c53-06167f40cc99\3c0bc021-c8a8-4e07-a973-6b14cbcb2b7e";
             using (var key = Registry.LocalMachine.OpenSubKey(screenRegPath))
             {
-                AddRow(table, InfoGroup.Power, "屏幕关闭超时(AC)", FormatPowerTimeout(key?.GetValue("ACSettingIndex")));
-                AddRow(table, InfoGroup.Power, "屏幕关闭超时(DC)", FormatPowerTimeout(key?.GetValue("DCSettingIndex")));
+                screenTimeoutDc = FormatPowerTimeout(key?.GetValue("DCSettingIndex"));
+                screenTimeoutAc = FormatPowerTimeout(key?.GetValue("ACSettingIndex"));
             }
 
             string sleepRegPath = $@"SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\{activeSchemeGuid}\238c9fa8-0aad-41ed-83f4-97be242c8f20\29f6c1db-86da-48c5-9fdb-f2b67b1f44da";
             using (var key = Registry.LocalMachine.OpenSubKey(sleepRegPath))
             {
-                AddRow(table, InfoGroup.Power, "睡眠超时(AC)", FormatPowerTimeout(key?.GetValue("ACSettingIndex")));
-                AddRow(table, InfoGroup.Power, "睡眠超时(DC)", FormatPowerTimeout(key?.GetValue("DCSettingIndex")));
+                sleepTimeoutDc = FormatPowerTimeout(key?.GetValue("DCSettingIndex"));
+                sleepTimeoutAc = FormatPowerTimeout(key?.GetValue("ACSettingIndex"));
             }
+
+            // 使用电池（DC）组：供电方式占首列并跨两行，设置项占次列，值在最右列。
+            AddRow(table, InfoGroup.Power, "使用电池", "屏幕关闭超时", string.Empty, screenTimeoutDc);
+            AddRow(table, InfoGroup.Power, string.Empty, "睡眠超时", string.Empty, sleepTimeoutDc);
+
+            // 连接电源（AC）组：同样的首列留空表示承接上一行。
+            AddRow(table, InfoGroup.Power, "连接电源", "屏幕关闭超时", string.Empty, screenTimeoutAc);
+            AddRow(table, InfoGroup.Power, string.Empty, "睡眠超时", string.Empty, sleepTimeoutAc);
         }
         else
         {
@@ -370,20 +410,24 @@ public static class SystemInfoCollector
                 foreach (ManagementObject cfg in cfgSearcher.Get())
                 {
                     hasIp = true;
+                    // 三层结构：网卡名（首列，跨该网卡全部行）→ IPv4/IPv6（次列，各跨三行）
+                    // → IP地址/网关/DNS地址（第三列）→ 具体地址（末列）。
+                    // 后五行的首列留空，表示承接上一行的网卡名；IPv4 组下网关行、DNS 行次列留空，并入 IPv4。
                     string desc = cfg["Description"]?.ToString() ?? "未知";
                     string[]? ips = cfg["IPAddress"] as string[];
                     string[]? gateways = cfg["DefaultIPGateway"] as string[];
+                    string[]? dnsServers = cfg["DNSServerSearchOrder"] as string[];
 
-                    // IPAddress 同时含 IPv4 与 IPv6，按是否含 ':' 分流，
-                    // 全部输出而不是只取首个，避免多 IP 绑定场景丢数据。
-                    //
-                    // v4 与 v6 分行展示：网关同样按协议拆分并跟随对应行，避免 v4/v6 网关混在一行。
-                    // 两行始终输出（无地址时填“无”），审计时需要明确看到“该网卡没有 IPv6”。
-                    // 属性名保留网卡描述以便区分多网卡，分组由 InfoGroup.IpConfig 显式声明。
-                    AddRow(table, InfoGroup.IpConfig, $"网卡 - {desc} (IPv4)",
-                        $"IP: {JoinAddresses(ips, ipv6: false)} | 网关: {JoinAddresses(gateways, ipv6: false)}");
-                    AddRow(table, InfoGroup.IpConfig, $"网卡 - {desc} (IPv6)",
-                        $"IP: {JoinAddresses(ips, ipv6: true)} | 网关: {JoinAddresses(gateways, ipv6: true)}");
+                    // v4 与 v6 各自成组，组内按 地址 → 网关 → DNS地址 排列；
+                    // 每行始终输出（无对应值时填"无"），审计时需要明确看到"该网卡没有 IPv6 / 没有 DNS"。
+                    // DNSServerSearchOrder 可能同时含 IPv4 与 IPv6 地址（混合列表），
+                    // 故复用 JoinAddresses 按 ':' 判定协议版本，分别与 v4/v6 网关行对齐展示。
+                    AddRow(table, InfoGroup.IpConfig, desc, "IPv4", "IP地址", JoinAddresses(ips, ipv6: false));
+                    AddRow(table, InfoGroup.IpConfig, string.Empty, string.Empty, "网关", JoinAddresses(gateways, ipv6: false));
+                    AddRow(table, InfoGroup.IpConfig, string.Empty, string.Empty, "DNS地址", JoinAddresses(dnsServers, ipv6: false));
+                    AddRow(table, InfoGroup.IpConfig, string.Empty, "IPv6", "IP地址", JoinAddresses(ips, ipv6: true));
+                    AddRow(table, InfoGroup.IpConfig, string.Empty, string.Empty, "网关", JoinAddresses(gateways, ipv6: true));
+                    AddRow(table, InfoGroup.IpConfig, string.Empty, string.Empty, "DNS地址", JoinAddresses(dnsServers, ipv6: true));
                 }
             }
             if (!hasIp)

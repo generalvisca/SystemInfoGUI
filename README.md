@@ -36,7 +36,7 @@
 
 ### 方式一：直接运行已发布程序
 
-本仓库当前**尚未发布 Release 产物**，暂无可直接下载的 exe。若后续发布，下载后右键「以管理员身份运行」即可。
+从 [Releases 页面](https://github.com/generalvisca/SystemInfoGUI/releases) 下载，三个包任选其一（区别见 Release 说明），右键「以管理员身份运行」即可。
 
 ### 方式二：从源码构建
 

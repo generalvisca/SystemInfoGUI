@@ -3,7 +3,7 @@
 一款 Windows 桌面端的**系统信息查询工具**：以 WinForms 表格的形式，把分散在 WMI、注册表、COM 组件中的本机关键信息一次性采集并分组成表。
 
 ![平台](https://img.shields.io/badge/Platform-Windows_x64-0078D6?logo=windows)
-![.NET](https://img.shields.io/badge/.NET-net10.0-windows-512BD4?logo=dotnet)
+![.NET](https://img.shields.io/badge/.NET-net10.0--windows-512BD4?logo=dotnet)
 ![界面](https://img.shields.io/badge/UI-Windows_Forms-0078D6)
 ![权限](https://img.shields.io/badge/Privilege-requireAdministrator-orange)
 ![许可证](https://img.shields.io/badge/License-MIT-yellow)
